@@ -114,6 +114,8 @@ def extract_emails(comments: list[str]) -> list[str]:
 
 def write_data2csv(
     writer,
+    post_url: str,
+    reactions_count: str,
     names: list[str],
     profile_links: list[str],
     avatars: list[str],
@@ -125,9 +127,10 @@ def write_data2csv(
         names, profile_links, avatars, headlines, emails, comments
     ):
         writer.writerow(
-            [name, profile_link, avatar, headline, email, comment.encode("utf-8")]
+            [post_url, reactions_count, name, profile_link, avatar, headline, email, comment.encode("utf-8")]
         )
         # utf-8 encoding helps to deal with emojis
+
 
 
 def download_avatars(urls: list[str], filenames: list[str], dir_name: str):

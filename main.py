@@ -8,6 +8,7 @@ from urllib.parse import urljoin
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import NoSuchElementException
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup as BSoup
@@ -54,29 +55,30 @@ args = parser.parse_args()
 now = datetime.now()
 unique_suffix = now.strftime("-%m-%d-%Y--%H-%M")
 
-with open(
-    "config.json",
-) as f:
+with open("config.json") as f:
     Config: dict[str, str] = json.load(f)
 
-
-post_url = check_post_url(Config["post_url"])
+# Assuming Config["post_url"] is now a list of URLs
+post_urls = [check_post_url(url) for url in Config["post_url"]]
 
 ##### Writer csv
 writer = csv.writer(
     open(
         Config["filename"] + unique_suffix + ".csv",
         "w",
+        newline="",
         encoding="utf-8",
     )
 )
-writer.writerow(["Name", "Headline", "Profile Picture", "Email", "Comment"])
+writer.writerow(["Post URL", "Reaction Count", "Name", "Headline", "Profile Picture", "Email", "Comment"])
+
+
 
 linkedin_username, linkedin_password = login_details()
 
 start = time()  # Starting time
-print("Initiating the process....")
-##### Selenium Chrome Driver
+
+# Selenium Chrome Driver
 options = Options()
 options.headless = args.headless
 driver = webdriver.Chrome(
@@ -94,80 +96,95 @@ password.send_keys(linkedin_password)
 sign_in_button = driver.find_element(By.XPATH, Config["sign_in_button_xpath"])
 sign_in_button.click()
 
-driver.get(post_url)
+for post_url in post_urls:
+    print("Processing URL:", post_url)
+    driver.get(post_url)
 
-print("Loading comments :", end=" ", flush=True)
-load_more("comments", Config["load_comments_class"], driver)
-if args.show_replies:
-    print("Loading replies :", end=" ", flush=True)
-    load_more("replies", Config["load_replies_class"], driver)
-# comments = driver.find_elements(By.XPATH, '//span[@class="ember-view"]')
-# this is bad because in case of comments with mentions or tags, it doesnt work
-# comments = driver.find_elements(By.CLASS_NAME, Config["comment_class"])
-# # print(comments)
-# comments = [comment.text.strip() for comment in comments]
+    print("Loading comments :", end=" ", flush=True)
+    load_more("comments", Config["load_comments_class"], driver)
+    if args.show_replies:
+        print("Loading replies :", end=" ", flush=True)
+        load_more("replies", Config["load_replies_class"], driver)
+    # comments = driver.find_elements(By.XPATH, '//span[@class="ember-view"]')
+    # this is bad because in case of comments with mentions or tags, it doesnt work
+    # comments = driver.find_elements(By.CLASS_NAME, Config["comment_class"])
+    # # print(comments)
+    # comments = [comment.text.strip() for comment in comments]
 
-# headlines = driver.find_elements(By.CLASS_NAME, Config["headline_class"])
-# headlines = [headline.text.strip() for headline in headlines]
+    # headlines = driver.find_elements(By.CLASS_NAME, Config["headline_class"])
+    # headlines = [headline.text.strip() for headline in headlines]
 
-# emails = extract_emails(comments)
+    # emails = extract_emails(comments)
 
-# names = driver.find_elements(By.CLASS_NAME, Config["name_class"])
-# names = [name.text.split("\n")[0] for name in names]
+    # names = driver.find_elements(By.CLASS_NAME, Config["name_class"])
+    # names = [name.text.split("\n")[0] for name in names]
 
-# avatars = driver.find_elements(By.CLASS_NAME, Config["avatar_class"])
-# avatars = [
-#     avatar.find_element(By.TAG_NAME, "img").get_attribute("src") for avatar in avatars
-# ]
+    # avatars = driver.find_elements(By.CLASS_NAME, Config["avatar_class"])
+    # avatars = [
+    #     avatar.find_element(By.TAG_NAME, "img").get_attribute("src") for avatar in avatars
+    # ]
 
-# safe full page source to file, for post-download processing
-if args.save_page_source:
-    with open("page_source.html", "w", encoding='utf-8') as f:
-        f.write(driver.page_source)
+    # safe full page source to file, for post-download processing
+    if args.save_page_source:
+        with open("page_source.html", "w", encoding='utf-8') as f:
+            f.write(driver.page_source)
 
-bs_obj = BSoup(driver.page_source, "html.parser")
+    bs_obj = BSoup(driver.page_source, "html.parser")
 
-comments = bs_obj.find_all("span", {"class": Config["comment_class"]})
-comments = [comment.get_text(strip=True) for comment in comments]
-
-headlines = bs_obj.find_all("span", {"class": Config["headline_class"]})
-headlines = [headline.get_text(strip=True) for headline in headlines]
-
-emails = extract_emails(comments)
-
-names = bs_obj.find_all("span", {"class": Config["name_class"]})
-names = [name.get_text(strip=True).split("\n")[0] for name in names]
-
-BASE_URL = "https://www.linkedin.com/"
-
-profile_links_set = bs_obj.find_all("a", {"class": Config["avatar_class"]})
-profile_links = [
-    urljoin(BASE_URL, profile_link["href"]) for profile_link in profile_links_set
-]
-
-avatars = []
-for a in profile_links_set:
-    img_link = ""
+    # Get reactions count (you may need to adjust this line depending on the exact HTML structure)
+    reactions_count = "0"
     try:
-        img_link = a.find("img")["src"]
-    except:
-        pass
+        # Try to get reactions count
+        reactions_count_element = driver.find_element(By.CLASS_NAME, Config["reactions_class"])
+        reactions_count = reactions_count_element.text  # Save the entire text of the element
+    except NoSuchElementException:
+        try: 
+            reactions_count_element = driver.find_element(By.CLASS_NAME, "social-details-social-counts__social-proof-text")
+            reactions_count = reactions_count_element.text  # Save the entire text of the element
+        except NoSuchElementException:
+            # If reactions count is not found, set it to "0"
+            reactions_count = "0"
 
-    avatars.append(img_link)
+    comments = bs_obj.find_all("span", {"class": Config["comment_class"]})
+    comments = [comment.get_text(strip=True) for comment in comments]
 
-# DEBUGGING
-# DEBUG_LENGTH = 10
-# print(names[:DEBUG_LENGTH])
-# print(profile_links[:DEBUG_LENGTH])
-# print(avatars[:DEBUG_LENGTH])
-# print(headlines[:DEBUG_LENGTH])
-# print(emails[:DEBUG_LENGTH])
-# print(comments[:DEBUG_LENGTH])
+    headlines = bs_obj.find_all("span", {"class": Config["headline_class"]})
+    headlines = [headline.get_text(strip=True) for headline in headlines]
 
-write_data2csv(writer, names, profile_links, avatars, headlines, emails, comments)
+    emails = extract_emails(comments)
 
-if args.download_avatars:
-    download_avatars(avatars, names, Config["dirname"] + unique_suffix)
+    names = bs_obj.find_all("span", {"class": Config["name_class"]})
+    names = [name.get_text(strip=True).split("\n")[0] for name in names]
+
+    BASE_URL = "https://www.linkedin.com/"
+
+    profile_links_set = bs_obj.find_all("a", {"class": Config["avatar_class"]})
+    profile_links = [
+        urljoin(BASE_URL, profile_link["href"]) for profile_link in profile_links_set
+    ]
+
+    avatars = []
+    for a in profile_links_set:
+        img_link = ""
+        try:
+            img_link = a.find("img")["src"]
+        except:
+            pass
+
+        avatars.append(img_link)
+
+    # DEBUGGING
+    # DEBUG_LENGTH = 10
+    # print(names[:DEBUG_LENGTH])
+    # print(profile_links[:DEBUG_LENGTH])
+    # print(avatars[:DEBUG_LENGTH])
+    # print(headlines[:DEBUG_LENGTH])
+    # print(emails[:DEBUG_LENGTH])
+    # print(comments[:DEBUG_LENGTH])
+
+    write_data2csv(writer, post_url, reactions_count, names, profile_links, avatars, headlines, emails, comments)
+    if args.download_avatars:
+        download_avatars(avatars, names, Config["dirname"] + unique_suffix)
 
 end = time()  # Finishing Time
 time_spent = end - start  # Time taken by script
