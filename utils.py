@@ -131,6 +131,12 @@ def write_data2csv(
         )
         # utf-8 encoding helps to deal with emojis
 
+def write_high_level_data2csv(writer, post_data: dict, reactions_count: str):
+    writer.writerow(
+        [post_data['url'], post_data['author'], post_data['theme'], reactions_count]
+    )
+
+
 
 
 def download_avatars(urls: list[str], filenames: list[str], dir_name: str):
